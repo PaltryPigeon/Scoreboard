@@ -1,0 +1,132 @@
+#include <Wire.h>
+#include <Adafruit_PCF8574.h>
+#include "TM1637.h"
+
+Adafruit_PCF8574 pcf1; // 0x24
+Adafruit_PCF8574 pcf2; // 0x20
+
+const int CLK1 = 32;
+const int DIO1 = 33;
+
+const int CLK2 = 26;
+const int DIO2 = 27;
+
+TM1637 inningDIS(CLK1, DIO1);
+TM1637 scoreDIS(CLK2, DIO2);
+
+void setup() {
+  Serial.begin(115200);
+
+    inningDIS.init();
+    inningDIS.set(BRIGHT_TYPICAL);
+
+    scoreDIS.init();
+    scoreDIS.set(BRIGHT_TYPICAL);
+
+  Wire.begin();
+
+  if (!pcf1.begin(0x24, &Wire)) {
+    Serial.println("Failed to initialize PCF8574 at 0x24");
+    while (1);
+  }
+
+  if (!pcf2.begin(0x20, &Wire)) {
+    Serial.println("Failed to initialize PCF8574 at 0x20");
+    while (1);
+  }
+
+  // Set all pins to output
+  for (int i = 0; i < 8; i++) {
+    pcf1.pinMode(i, OUTPUT);
+    pcf2.pinMode(i, OUTPUT);
+  }
+
+  // Turn all LEDs off (HIGH for active-low)
+  clearAll();
+}
+
+void loop() {
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    input.trim();
+
+    if (input.length() > 0) {
+      updateLEDs(input);
+    }
+  }
+}
+
+void updateLEDs(String data) {
+  int values[10];
+  int idx = 0;
+  int lastIndex = 0;
+
+  for (int i = 0; i < data.length(); i++) {
+    if (data.charAt(i) == ',' || i == data.length() - 1) {
+      int endIdx = (i == data.length() - 1) ? i + 1 : i;
+      String valStr = data.substring(lastIndex, endIdx);
+      values[idx++] = valStr.toInt();
+      lastIndex = i + 1;
+      if (idx >= 10) break;
+    }
+  }
+  int phillies_score = values[0];
+  int opponent_score = values[1];
+  int inning = values[2];
+  int balls = values[4];
+  int strikes = values[5];
+  int outs = values[6];
+  int onFirst = values[7];
+  int onSecond = values[8];
+  int onThird = values[9];
+  int topHalf = values[3] == 0 ? 1 : 0;
+  int bottomHalf = values[3] == 1 ? 1 : 0;
+
+  clearAll();
+
+  // Balls (active-low)
+  if (balls >= 1) pcf1.digitalWrite(0, LOW); // Ball 1
+  if (balls >= 2) pcf1.digitalWrite(1, LOW); // Ball 2
+  if (balls >= 3) pcf1.digitalWrite(3, LOW); // Ball 3
+  if (balls >= 4) pcf1.digitalWrite(2, LOW); // Ball 4
+
+  // Strikes (active-low)
+  if (strikes >= 1) pcf1.digitalWrite(6, LOW); // Strike 1
+  if (strikes >= 2) pcf1.digitalWrite(4, LOW); // Strike 2
+  if (strikes >= 3) pcf1.digitalWrite(5, LOW); // Strike 3
+
+  // Outs (active-low)
+  if (outs >= 1) pcf1.digitalWrite(7, LOW); // Out 1
+  if (outs >= 2) pcf2.digitalWrite(0, LOW); // Out 2
+  if (outs >= 3) pcf2.digitalWrite(1, LOW); // Out 3
+
+  // Bases (active-low)
+  if (onFirst)  pcf2.digitalWrite(3, LOW); // 1B
+  if (onSecond) pcf2.digitalWrite(4, LOW); // 2B
+  if (onThird)  pcf2.digitalWrite(2, LOW); // 3B
+
+  // Inning half (active-low)
+  if (topHalf)     pcf2.digitalWrite(5, LOW); // Top
+  if (bottomHalf)  pcf2.digitalWrite(6, LOW); // Bottom
+
+    // === Update Displays ===
+
+  // Inning Display (e.g., 0005)
+int8_t inning_digits[4] = {0, 0, 0, inning % 10};
+  inningDIS.display(inning_digits);
+
+  // Score Display (PHI vs Opponent, e.g., 0307)
+  int8_t score_digits[4] = {
+  (int8_t)(phillies_score / 10),
+  (int8_t)(phillies_score % 10),
+  (int8_t)(opponent_score / 10),
+  (int8_t)(opponent_score % 10)
+};
+  scoreDIS.display(score_digits);
+}
+void clearAll() {
+  for (int i = 0; i < 8; i++) {
+    pcf1.digitalWrite(i, HIGH);  // OFF
+    pcf2.digitalWrite(i, HIGH);  // OFF
+  }
+}
