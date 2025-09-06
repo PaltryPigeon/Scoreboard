@@ -1,0 +1,169 @@
+#include <Wire.h>
+#include <Adafruit_PCF8574.h>
+#include <esp_now.h>
+#include <WiFi.h>
+#include "TM1637.h"
+
+Adafruit_PCF8574 pcf1; // 0x24
+Adafruit_PCF8574 pcf2; // 0x20
+
+const int CLK1 = 32;
+const int DIO1 = 33;
+
+const int CLK2 = 26;
+const int DIO2 = 27;
+
+TM1637 inningDIS(CLK1, DIO1);
+TM1637 scoreDIS(CLK2, DIO2);
+
+// === ESP-NOW Setup ===
+typedef struct struct_message {
+  char payload[250];
+} struct_message;
+
+struct_message incomingData;
+
+void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingDataBytes, int len) {
+  memcpy(&incomingData, incomingDataBytes, sizeof(incomingData));
+  String received = String(incomingData.payload);
+  received.trim();
+  updateLEDs(received);
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  inningDIS.init();
+  inningDIS.set(BRIGHT_TYPICAL);
+  scoreDIS.init();
+  scoreDIS.set(BRIGHT_TYPICAL);
+
+  Wire.begin();
+
+  if (!pcf1.begin(0x24, &Wire)) {
+    Serial.println("Failed to initialize PCF8574 at 0x24");
+    while (1);
+  }
+
+  if (!pcf2.begin(0x20, &Wire)) {
+    Serial.println("Failed to initialize PCF8574 at 0x20");
+    while (1);
+  }
+
+  for (int i = 0; i < 8; i++) {
+    pcf1.pinMode(i, OUTPUT);
+    pcf2.pinMode(i, OUTPUT);
+  }
+
+  clearAll();
+
+  // === ESP-NOW Initialization ===
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(); // Not connecting to router
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    while (1);
+  }
+
+  esp_now_register_recv_cb(onDataRecv);
+}
+
+void loop() {
+  // no need to check Serial anymore
+}
+
+// === Existing updateLEDs and clearAll remain unchanged ===
+
+void updateLEDs(String data) {
+  int values[10];
+  int idx = 0;
+  int lastIndex = 0;
+
+  for (int i = 0; i < data.length(); i++) {
+    if (data.charAt(i) == ',' || i == data.length() - 1) {
+      int endIdx = (i == data.length() - 1) ? i + 1 : i;
+      String valStr = data.substring(lastIndex, endIdx);
+      values[idx++] = valStr.toInt();
+      lastIndex = i + 1;
+      if (idx >= 10) break;
+    }
+  }
+
+  int phillies_score = values[0];
+  int opponent_score = values[1];
+  int inning = values[2];
+  int balls = values[4];
+  int strikes = values[5];
+  int outs = values[6];
+  int onFirst = values[7];
+  int onSecond = values[8];
+  int onThird = values[9];
+  int topHalf = values[3] == 0 ? 1 : 0;
+  int bottomHalf = values[3] == 1 ? 1 : 0;
+
+  clearAll();
+
+  if (balls >= 1) pcf1.digitalWrite(0, LOW);
+  if (balls >= 2) pcf1.digitalWrite(1, LOW);
+  if (balls >= 3) pcf1.digitalWrite(3, LOW);
+  if (balls >= 4) pcf1.digitalWrite(2, LOW);
+
+  if (strikes >= 1) pcf1.digitalWrite(6, LOW);
+  if (strikes >= 2) pcf1.digitalWrite(4, LOW);
+  if (strikes >= 3) pcf1.digitalWrite(5, LOW);
+
+  if (outs >= 1) pcf1.digitalWrite(7, LOW);
+  if (outs >= 2) pcf2.digitalWrite(0, LOW);
+  if (outs >= 3) pcf2.digitalWrite(1, LOW);
+
+  if (onFirst)  pcf2.digitalWrite(3, LOW);
+  if (onSecond) pcf2.digitalWrite(4, LOW);
+  if (onThird)  pcf2.digitalWrite(2, LOW);
+
+  if (topHalf)    pcf2.digitalWrite(5, LOW);
+  if (bottomHalf) pcf2.digitalWrite(6, LOW);
+
+  // ===== Inning Display (suppress leading zeros) =====
+  int8_t inning_digits[4] = {-1, -1, -1, -1};
+  if (inning < 10) {
+    inning_digits[3] = inning;
+  } else if (inning < 100) {
+    inning_digits[2] = inning / 10;
+    inning_digits[3] = inning % 10;
+  } else {
+    inning_digits[1] = (inning / 100) % 10;
+    inning_digits[2] = (inning / 10) % 10;
+    inning_digits[3] = inning % 10;
+  }
+  inningDIS.display(inning_digits);
+
+  // ===== Score Display (suppress leading zeros for each team) =====
+  int8_t score_digits[4] = {-1, -1, -1, -1};
+
+  // Phillies/Yankees score
+  if (phillies_score >= 10) {
+    score_digits[0] = phillies_score / 10;
+    score_digits[1] = phillies_score % 10;
+  } else {
+    score_digits[1] = phillies_score;
+  }
+
+  // Opponent score
+  if (opponent_score >= 10) {
+    score_digits[2] = opponent_score / 10;
+    score_digits[3] = opponent_score % 10;
+  } else {
+    score_digits[3] = opponent_score;
+  }
+
+  scoreDIS.display(score_digits);
+}
+
+
+void clearAll() {
+  for (int i = 0; i < 8; i++) {
+    pcf1.digitalWrite(i, HIGH);
+    pcf2.digitalWrite(i, HIGH);
+  }
+}
