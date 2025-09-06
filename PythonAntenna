@@ -1,0 +1,76 @@
+import requests
+from datetime import date
+import serial
+import time
+
+SERIAL_PORT = 'COM6'
+BAUD_RATE = 115200
+
+ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+time.sleep(2)  # Wait for ESP32 reset
+
+def get_phillies_game_pk():
+    today = date.today().isoformat()
+    schedule_url = f'https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={today}'
+    schedule_data = requests.get(schedule_url).json()
+
+    for date_info in schedule_data.get('dates', []):
+        for game in date_info.get('games', []):
+            home = game['teams']['home']['team']['name']
+            away = game['teams']['away']['team']['name']
+            if 'Phillies' in home or 'Phillies' in away:
+                return game['gamePk']
+    return None
+
+def send_game_data(gamePk):
+    live_url = f'https://statsapi.mlb.com/api/v1.1/game/{gamePk}/feed/live'
+    live_data = requests.get(live_url).json()
+
+    try:
+        count = live_data['liveData']['plays']['currentPlay']['count']
+        balls = count.get('balls', 0)
+        strikes = count.get('strikes', 0)
+        outs = count.get('outs', 0)
+
+        inning = live_data['liveData']['linescore']['currentInning']
+        topBottom = live_data['liveData']['linescore']['inningHalf']
+        inning_half_flag = 0 if topBottom == "Top" else 1
+
+        home_team = live_data['gameData']['teams']['home']['abbreviation']
+        away_team = live_data['gameData']['teams']['away']['abbreviation']
+        home_score = live_data['liveData']['linescore']['teams']['home']['runs']
+        away_score = live_data['liveData']['linescore']['teams']['away']['runs']
+
+        if home_team == 'PHI':
+            phillies_score = home_score
+            opponent_score = away_score
+        else:
+            phillies_score = away_score
+            opponent_score = home_score
+
+        offense = live_data['liveData']['linescore'].get('offense', {})
+        onFirst = 1 if 'first' in offense else 0
+        onSecond = 1 if 'second' in offense else 0
+        onThird = 1 if 'third' in offense else 0
+
+        formatted_output = f"{phillies_score}, {opponent_score}, {inning}, {inning_half_flag}, {balls}, {strikes}, {outs}, {onFirst}, {onSecond}, {onThird}"
+        print("Sending:", formatted_output)
+        ser.write((formatted_output + '\n').encode('utf-8'))
+
+    except KeyError:
+        print("Live game data not yet available.")
+
+# === Main Loop ===
+gamePk = get_phillies_game_pk()
+if not gamePk:
+    print("No Phillies game found today.")
+    ser.close()
+    exit()
+
+try:
+    while True:
+        send_game_data(gamePk)
+        time.sleep(30)  # Update every 10 seconds
+except KeyboardInterrupt:
+    print("Exiting...")
+    ser.close()
