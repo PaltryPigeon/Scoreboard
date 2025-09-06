@@ -1,3 +1,10 @@
+//   Test the Scoreboard!
+//   99,99,9,1,4,3,3,1,1,1 
+//  ^^^Tests Mosts LEDs^^^
+
+//   0,0,1,0,0,0,0,0,0,0
+//    ^^^Clear LEDs^^^
+
 #include <Wire.h>
 #include <Adafruit_PCF8574.h>
 #include "TM1637.h"
