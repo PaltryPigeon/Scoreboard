@@ -70,6 +70,7 @@ void updateLEDs(String data) {
       if (idx >= 10) break;
     }
   }
+
   int phillies_score = values[0];
   int opponent_score = values[1];
   int inning = values[2];
@@ -84,46 +85,62 @@ void updateLEDs(String data) {
 
   clearAll();
 
-  // Balls (active-low)
-  if (balls >= 1) pcf1.digitalWrite(0, LOW); // Ball 1
-  if (balls >= 2) pcf1.digitalWrite(1, LOW); // Ball 2
-  if (balls >= 3) pcf1.digitalWrite(3, LOW); // Ball 3
-  if (balls >= 4) pcf1.digitalWrite(2, LOW); // Ball 4
+  if (balls >= 1) pcf1.digitalWrite(0, LOW);
+  if (balls >= 2) pcf1.digitalWrite(1, LOW);
+  if (balls >= 3) pcf1.digitalWrite(3, LOW);
+  if (balls >= 4) pcf1.digitalWrite(2, LOW);
 
-  // Strikes (active-low)
-  if (strikes >= 1) pcf1.digitalWrite(6, LOW); // Strike 1
-  if (strikes >= 2) pcf1.digitalWrite(4, LOW); // Strike 2
-  if (strikes >= 3) pcf1.digitalWrite(5, LOW); // Strike 3
+  if (strikes >= 1) pcf1.digitalWrite(6, LOW);
+  if (strikes >= 2) pcf1.digitalWrite(4, LOW);
+  if (strikes >= 3) pcf1.digitalWrite(5, LOW);
 
-  // Outs (active-low)
-  if (outs >= 1) pcf1.digitalWrite(7, LOW); // Out 1
-  if (outs >= 2) pcf2.digitalWrite(0, LOW); // Out 2
-  if (outs >= 3) pcf2.digitalWrite(1, LOW); // Out 3
+  if (outs >= 1) pcf1.digitalWrite(7, LOW);
+  if (outs >= 2) pcf2.digitalWrite(0, LOW);
+  if (outs >= 3) pcf2.digitalWrite(1, LOW);
 
-  // Bases (active-low)
-  if (onFirst)  pcf2.digitalWrite(3, LOW); // 1B
-  if (onSecond) pcf2.digitalWrite(4, LOW); // 2B
-  if (onThird)  pcf2.digitalWrite(2, LOW); // 3B
+  if (onFirst)  pcf2.digitalWrite(3, LOW);
+  if (onSecond) pcf2.digitalWrite(4, LOW);
+  if (onThird)  pcf2.digitalWrite(2, LOW);
 
-  // Inning half (active-low)
-  if (topHalf)     pcf2.digitalWrite(5, LOW); // Top
-  if (bottomHalf)  pcf2.digitalWrite(6, LOW); // Bottom
+  if (topHalf)    pcf2.digitalWrite(5, LOW);
+  if (bottomHalf) pcf2.digitalWrite(6, LOW);
 
-    // === Update Displays ===
-
-  // Inning Display (e.g., 0005)
-int8_t inning_digits[4] = {0, 0, 0, inning % 10};
+  // ===== Inning Display (suppress leading zeros) =====
+  int8_t inning_digits[4] = {-1, -1, -1, -1};
+  if (inning < 10) {
+    inning_digits[3] = inning;
+  } else if (inning < 100) {
+    inning_digits[2] = inning / 10;
+    inning_digits[3] = inning % 10;
+  } else {
+    inning_digits[1] = (inning / 100) % 10;
+    inning_digits[2] = (inning / 10) % 10;
+    inning_digits[3] = inning % 10;
+  }
   inningDIS.display(inning_digits);
 
-  // Score Display (PHI vs Opponent, e.g., 0307)
-  int8_t score_digits[4] = {
-  (int8_t)(phillies_score / 10),
-  (int8_t)(phillies_score % 10),
-  (int8_t)(opponent_score / 10),
-  (int8_t)(opponent_score % 10)
-};
+  // ===== Score Display (suppress leading zeros for each team) =====
+  int8_t score_digits[4] = {-1, -1, -1, -1};
+
+  // Phillies/Yankees score
+  if (phillies_score >= 10) {
+    score_digits[0] = phillies_score / 10;
+    score_digits[1] = phillies_score % 10;
+  } else {
+    score_digits[1] = phillies_score;
+  }
+
+  // Opponent score
+  if (opponent_score >= 10) {
+    score_digits[2] = opponent_score / 10;
+    score_digits[3] = opponent_score % 10;
+  } else {
+    score_digits[3] = opponent_score;
+  }
+
   scoreDIS.display(score_digits);
 }
+
 void clearAll() {
   for (int i = 0; i < 8; i++) {
     pcf1.digitalWrite(i, HIGH);  // OFF
